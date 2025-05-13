@@ -1,12 +1,13 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { User, Mail, Lock, Eye, EyeOff, Check } from "lucide-react";
+import { User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
 
 const RegisterForm = () => {
   const [name, setName] = useState("");
@@ -20,7 +21,30 @@ const RegisterForm = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  // Simple password strength checker
+  // Verificar se já está autenticado ao carregar o componente
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        navigate("/dashboard");
+      }
+    };
+    
+    checkSession();
+    
+    // Configurar listener de mudança de estado de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (session) {
+          navigate("/dashboard");
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  // Simples verificador de força de senha
   const getPasswordStrength = () => {
     if (!password) return null;
 
@@ -31,11 +55,11 @@ const RegisterForm = () => {
 
   const passwordStrength = getPasswordStrength();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Validate
+    // Validar
     if (password !== confirmPassword) {
       toast({
         title: "Erro",
@@ -56,20 +80,50 @@ const RegisterForm = () => {
       return;
     }
 
-    // Simulate loading
-    setTimeout(() => {
-      setIsLoading(false);
-      
-      localStorage.setItem("user", JSON.stringify({ name, email }));
-      localStorage.setItem("isAuthenticated", "true");
-      
-      toast({
-        title: "Conta criada com sucesso",
-        description: "Bem-vindo ao WhatsApp SaaS",
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
       });
-      
-      navigate("/dashboard");
-    }, 1000);
+
+      if (error) {
+        toast({
+          title: "Erro no cadastro",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Conta criada com sucesso",
+          description: "Bem-vindo ao WhatsApp SaaS",
+        });
+        
+        if (data.session) {
+          navigate("/dashboard");
+        } else {
+          // Se o Supabase estiver configurado para verificação de email
+          toast({
+            title: "Verifique seu email",
+            description: "Enviamos um link de verificação para seu email",
+          });
+          navigate("/login");
+        }
+      }
+    } catch (error) {
+      toast({
+        title: "Erro no servidor",
+        description: "Ocorreu um erro ao processar sua solicitação",
+        variant: "destructive",
+      });
+      console.error("Registration error:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

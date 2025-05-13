@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
 
 const LoginForm = () => {
   const [email, setEmail] = useState("");
@@ -17,33 +18,63 @@ const LoginForm = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Verificar se já está autenticado ao carregar o componente
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        navigate("/dashboard");
+      }
+    };
+    
+    checkSession();
+    
+    // Configurar listener de mudança de estado de autenticação
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (session) {
+          navigate("/dashboard");
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Simulate loading
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
       
-      // Allow any email/password combination for testing
-      if (email && password) {
-        localStorage.setItem("user", JSON.stringify({ email }));
-        localStorage.setItem("isAuthenticated", "true");
-        
+      if (error) {
+        toast({
+          title: "Erro de login",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else if (data.user) {
         toast({
           title: "Login bem-sucedido",
           description: "Bem-vindo ao WhatsApp SaaS",
         });
         
         navigate("/dashboard");
-      } else {
-        toast({
-          title: "Erro de login",
-          description: "Por favor, preencha todos os campos",
-          variant: "destructive",
-        });
       }
-    }, 1000);
+    } catch (error) {
+      toast({
+        title: "Erro no servidor",
+        description: "Ocorreu um erro ao processar sua solicitação",
+        variant: "destructive",
+      });
+      console.error("Login error:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

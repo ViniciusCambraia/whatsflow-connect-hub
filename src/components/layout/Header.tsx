@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,6 +14,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { supabase } from "@/integrations/supabase/client";
 
 const Header = () => {
   const { theme, setTheme } = useTheme();
@@ -33,19 +34,41 @@ const Header = () => {
       time: "1 hora atrás",
     },
   ]);
+  const [userData, setUserData] = useState<{ email?: string; name?: string } | null>(null);
 
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  useEffect(() => {
+    const getUserData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        setUserData({
+          email: user.email,
+          name: user.user_metadata.full_name || user.email?.split('@')[0],
+        });
+      }
+    };
+    
+    getUserData();
+  }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem("user");
-    localStorage.removeItem("isAuthenticated");
-    
-    toast({
-      title: "Logout realizado",
-      description: "Você foi desconectado com sucesso",
-    });
-    
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      
+      toast({
+        title: "Logout realizado",
+        description: "Você foi desconectado com sucesso",
+      });
+      
+      navigate("/login");
+    } catch (error) {
+      console.error("Erro ao fazer logout:", error);
+      toast({
+        title: "Erro ao desconectar",
+        description: "Não foi possível realizar o logout",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -113,13 +136,18 @@ const Header = () => {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full">
               <Avatar>
-                <AvatarImage src="/placeholder.svg" alt={user.name || "User"} />
-                <AvatarFallback>{user.name ? user.name.charAt(0).toUpperCase() : "U"}</AvatarFallback>
+                <AvatarImage src="/placeholder.svg" alt={userData?.name || "User"} />
+                <AvatarFallback>
+                  {userData?.name ? userData.name.charAt(0).toUpperCase() : "U"}
+                </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Minha conta</DropdownMenuLabel>
+            <DropdownMenuItem disabled className="opacity-70">
+              {userData?.email || "Carregando..."}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/profile")}>
               <User className="mr-2 h-4 w-4" />
